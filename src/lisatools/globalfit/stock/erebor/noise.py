@@ -1506,6 +1506,6 @@ def configure_logpspline_noise(fit, noise, *, settings):
     general.sensitivity_backend_class = CompositeSensitivityBackend
     general.sensitivity_init_kwargs = kwargs
     general.fixed_psd_params = None
-    general.fixed_psd_kwargs = dict(psd_params=None, galfor_params=None)
+    general.fixed_psd_kwargs = {"psd_params": None, "galfor_params": None}
     general.likelihood_source_only = False
     return fit

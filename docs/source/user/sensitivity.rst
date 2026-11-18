@@ -368,6 +368,9 @@ For an unbuilt fixed-noise fit with user-supplied XYZ time data:
     # xyz_td has shape (3, n); fd describes its natural rFFT grid.
     fit = erebor.blank(
         dt=dt,
+        Tobs=1 / df,
+        window_taper_wavelets=0,
+        window_taper_duration=0.0,
         data_processor_class=UserDataProcessor,
         processor_init_kwargs={"data": xyz_td, "dt": dt},
     )
@@ -378,7 +381,10 @@ The helper retains both likelihood terms and disables the stock instrument
 component. It rejects already-built fits, existing extra noise components,
 and sampled ``psd``, ``galfor`` or ``sgwb`` branches. Supply the complete
 desired fixed noise covariance. It leaves data conditioning to the caller;
-in particular, use the same window for the data and imported covariance.
+use the same window for the data and imported covariance. The example
+disables Erebor's additional taper: for a window-aware covariance, supply
+the already windowed/gapped time stream. Otherwise, reconstruct the covariance
+for the actual Erebor analysis window, including its configured taper duration.
 
 This first draft conditions on a fitted matrix or one selected draw. It does
 not propagate the LogPSplinePSD posterior or implement joint spline updates

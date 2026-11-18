@@ -3,6 +3,7 @@
 import copy
 import pickle
 import unittest
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import numpy as np
@@ -156,6 +157,71 @@ class LogPSplineNoiseTest(unittest.TestCase):
 
 
 class EreborLogPSplineConfigurationTest(unittest.TestCase):
+    def test_real_erebor_walkers_match_unwindowed_fd_likelihood(self):
+        from eryn.state import BranchSupplemental
+        from mpi4py import MPI
+
+        from lisatools.globalfit.run import GlobalFit
+        from lisatools.globalfit.stock import erebor
+        from lisatools.globalfit.stock.erebor.injections import UserDataProcessor
+
+        n, dt = 64, 5.0
+        settings = FDSettings(
+            n // 2 + 1, 1 / (n * dt), min_freq=0.025, max_freq=0.08, force_backend="cpu"
+        )
+        frequency = np.asarray(settings.f_arr)
+        covariance = spectrum(frequency)
+        noise = LogPSplineNoise(frequency, covariance)
+        data = 1e-21 * np.random.default_rng(7).normal(size=(3, n))
+        with TemporaryDirectory(prefix="erebor-logpspline-") as output:
+            fit = erebor.blank(
+                nwalkers=2,
+                ntemps=2,
+                use_gpu=False,
+                gpus=None,
+                dt=dt,
+                nf=8,
+                nt=8,
+                Tobs=n * dt,
+                min_freq=0.025,
+                max_freq=0.08,
+                # The reference here describes rectangular-window data. The
+                # inherited wavelet taper must also be disabled explicitly.
+                window_taper_wavelets=0,
+                window_taper_duration=0.0,
+                file_store_dir=output + "/",
+                data_processor_class=UserDataProcessor,
+                processor_init_kwargs={"data": data, "dt": dt},
+            )
+            erebor.configure_logpspline_noise(fit, noise, settings=settings)
+            fit.build()
+            runtime = GlobalFit(fit, MPI.COMM_SELF)
+            priors = {}
+            for name in fit.branch_names:
+                priors.update(fit.source_info[name].priors)
+            state = runtime.load_info(priors)
+            nt, nw = runtime.ntemps, runtime.nwalkers
+            state.supplemental = BranchSupplemental(
+                {"walker_inds": np.tile(np.arange(nw), (nt, 1))},
+                base_shape=(nt, nw),
+                copy=True,
+            )
+            containers = runtime.setup_acs(state)
+            residual = (dt * np.fft.rfft(data, axis=-1))[:, settings.active_slice].T
+            quadratic = np.einsum(
+                "fi,fi->",
+                residual.conj(),
+                np.linalg.solve(covariance, residual[..., None])[..., 0],
+            ).real
+            expected = -2 * settings.df * quadratic - np.linalg.slogdet(covariance)[1].sum()
+            self.assertFalse(containers[0].likelihood_source_only)
+            np.testing.assert_allclose(
+                containers[0].sens_mat.sens_mat, covariance.transpose(1, 2, 0), atol=0
+            )
+            np.testing.assert_allclose(
+                np.asarray(containers.likelihood()), expected, rtol=1e-12, atol=1e-9
+            )
+
     def test_fixed_noise_configuration_and_guards(self):
         from lisatools.globalfit.stock.erebor.noise import configure_logpspline_noise
 
