@@ -72,6 +72,7 @@ from .noise import (  # noqa: F401
     GalForSetup,
     PSDSettings,
     PSDSetup,
+    configure_logpspline_noise,
     get_galfor_erebor_settings,
 )
 from .stochastic import (  # noqa: F401

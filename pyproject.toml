@@ -103,6 +103,7 @@ optional-dependencies.testing = [
   "gbgpu",
   "corner",
   "gpubackendtools>=0.0.16",
+  "xarray",  # LogPSplinePSD result-interchange tests; no inference dependency
 ]
 
 optional-dependencies.dev = [

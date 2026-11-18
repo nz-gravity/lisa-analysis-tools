@@ -1464,3 +1464,48 @@ def noise_sensitivity_init_kwargs(
     if extra:
         out.update(extra)
     return out
+
+
+def configure_logpspline_noise(fit, noise, *, settings):
+    """Configure an unbuilt Erebor fit with a fixed LogPSplinePSD FD covariance.
+
+    ``noise`` is a :class:`~lisatools.logpsplines.LogPSplineNoise` containing
+    the complete desired noise spectral density, already in physical units.
+    ``settings`` is an explicit matching positive-frequency FD grid. This
+    installs it through the existing composite backend, disables the stock
+    instrument component, and retains both quadratic and log-determinant
+    likelihood terms. Data preprocessing/selection remains the caller's job.
+
+    Use a fixed-noise variant (e.g. ``blank`` with user-supplied XYZ data),
+    without ``psd``, ``galfor`` or ``sgwb`` branches or extra noise components.
+    Joint spline proposals in ``PSDMove`` and WDM projection are follow-ups.
+
+    Returns:
+        The same fit, configured in place before ``build()``.
+    """
+    from lisatools.logpsplines import LogPSplineNoise
+    from lisatools.sensitivity import CompositeSensitivityBackend
+
+    if not isinstance(noise, LogPSplineNoise):
+        raise TypeError("noise must be a LogPSplineNoise component.")
+    if fit.built:
+        raise ValueError("Configure LogPSplinePSD before building the fit.")
+    sampled_noise = set(fit.branches) & {"psd", "galfor", "sgwb"}
+    if sampled_noise:
+        raise ValueError(
+            "Fixed LogPSplinePSD covariance requires a fit without sampled noise "
+            f"branches; found {sorted(sampled_noise)}."
+        )
+    general = fit.general
+    kwargs = dict(general.sensitivity_init_kwargs or {})
+    if kwargs.get("extra_components"):
+        raise ValueError("Configure a single complete LogPSplinePSD noise covariance.")
+    noise.covariance(settings)  # Validate domain and complete frequency coverage first.
+    kwargs["extra_components"] = [noise]
+    general.domain_settings = settings
+    general.sensitivity_backend_class = CompositeSensitivityBackend
+    general.sensitivity_init_kwargs = kwargs
+    general.fixed_psd_params = None
+    general.fixed_psd_kwargs = dict(psd_params=None, galfor_params=None)
+    general.likelihood_source_only = False
+    return fit
